@@ -17,33 +17,72 @@ except Exception:
 _tts_lock = threading.Lock()
 
 class TextToSpeech:
+    _instance = None
+    _instance_lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+        
+        self._initialized = True
         self.voices = []
         self.rate = 200
         self.volume = 1.0
         self._current_engine = None
         self._current_engine_lock = threading.Lock()
-        # 初始化声音列表
+        self._speed = 1.0
+        self._pitch = 1.0
+        self._volume = 1.0
+        self._voice_id = 0
+        self._engine_pool = []
+        self._engine_pool_lock = threading.Lock()
         self._init_voices()
     
     def _init_voices(self):
         """初始化声音列表"""
         try:
-            engine = pyttsx3.init(driverName=None)
-            self.voices = engine.getProperty('voices')
-            self.rate = engine.getProperty('rate')
-            self.volume = engine.getProperty('volume')
-            del engine  # 释放引擎资源
+            engine = self._get_or_create_engine()
+            if engine:
+                self.voices = engine.getProperty('voices')
+                self.rate = engine.getProperty('rate')
+                self.volume = engine.getProperty('volume')
         except Exception:
             self.voices = []
     
-    @property
-    def engine(self):
-        """每次访问时创建新的引擎实例，解决多线程问题"""
+    def _get_or_create_engine(self):
+        """获取或创建引擎实例"""
         try:
+            with self._engine_pool_lock:
+                if self._engine_pool:
+                    return self._engine_pool.pop()
+            
             return pyttsx3.init(driverName=None)
         except Exception:
             return None
+    
+    def _return_engine(self, engine):
+        """归还引擎实例到池中"""
+        if engine:
+            try:
+                with self._engine_pool_lock:
+                    if len(self._engine_pool) < 3:
+                        self._engine_pool.append(engine)
+                    else:
+                        del engine
+            except Exception:
+                pass
+    
+    @property
+    def engine(self):
+        """获取引擎实例"""
+        return self._get_or_create_engine()
     
     def set_parameters(self, speed=1.0, pitch=1.0, volume=1.0, voice_id=None):
         """设置TTS参数（保存参数，在播放时应用）"""
@@ -72,7 +111,7 @@ class TextToSpeech:
             new_volume = max(0.0, min(1.0, self.volume * volume))
             engine.setProperty('volume', new_volume)
             
-            if voice_id is not None and 0 <= voice_id < len(self.voices):
+            if voice_id is not None and self.voices and 0 <= voice_id < len(self.voices):
                 engine.setProperty('voice', self.voices[voice_id].id)
         except Exception:
             pass
@@ -83,10 +122,13 @@ class TextToSpeech:
             return True
         
         with _tts_lock:
+            engine = None
             try:
-                engine = pyttsx3.init(driverName=None)
+                engine = self._get_or_create_engine()
                 
-                # 保存当前引擎实例
+                if not engine:
+                    return False
+                
                 with self._current_engine_lock:
                     self._current_engine = engine
                 
@@ -94,7 +136,6 @@ class TextToSpeech:
                 engine.say(text)
                 engine.runAndWait()
                 
-                # 播放完成后清空当前引擎实例
                 with self._current_engine_lock:
                     self._current_engine = None
                 
@@ -106,15 +147,16 @@ class TextToSpeech:
                 
                 return True
             except Exception:
-                # 发生异常时也清空当前引擎实例
                 with self._current_engine_lock:
                     self._current_engine = None
                 return False
+            finally:
+                if engine:
+                    self._return_engine(engine)
     
     def stop(self):
         """停止播放"""
         try:
-            # 停止当前正在运行的引擎实例
             with self._current_engine_lock:
                 if self._current_engine:
                     try:
@@ -122,7 +164,6 @@ class TextToSpeech:
                     except Exception:
                         pass
                     finally:
-                        # 清空当前引擎实例
                         self._current_engine = None
             
             return True
@@ -135,11 +176,18 @@ class TextToSpeech:
             return False
             
         with _tts_lock:
+            engine = None
             try:
-                engine = pyttsx3.init(driverName=None)
+                engine = self._get_or_create_engine()
+                if not engine:
+                    return False
+                    
                 self._apply_parameters(engine)
                 engine.save_to_file(text, file_path)
                 engine.runAndWait()
                 return True
             except Exception:
                 return False
+            finally:
+                if engine:
+                    self._return_engine(engine)
