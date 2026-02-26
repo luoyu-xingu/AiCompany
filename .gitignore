@@ -49,3 +49,7 @@ Thumbs.db
 
 # Build artifacts
 *.spec
+
+# Model cache
+model_cache/
+ai_companion_system/model_cache/
