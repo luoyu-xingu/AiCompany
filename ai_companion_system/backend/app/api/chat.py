@@ -3,7 +3,6 @@ from app.core.chat import ChatManager
 
 router = APIRouter()
 
-# 初始化对话管理器
 chat_manager = ChatManager()
 
 @router.post("/get-response")
@@ -25,7 +24,7 @@ async def get_response(user_input: str, emotion: str = "calm"):
 async def set_model(model_name: str):
     """设置对话模型"""
     try:
-        if model_name not in ["local", "doubao"]:
+        if model_name != "local":
             raise HTTPException(status_code=400, detail="无效的模型名称")
         
         success = chat_manager.set_model(model_name)

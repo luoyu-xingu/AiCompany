@@ -59,12 +59,20 @@ class TextToSpeech:
     def _get_or_create_engine(self):
         """获取或创建引擎实例"""
         try:
+            print("[TTS] _get_or_create_engine")
             with self._engine_pool_lock:
                 if self._engine_pool:
+                    print(f"[TTS] 从池中获取引擎: {len(self._engine_pool)}个")
                     return self._engine_pool.pop()
             
-            return pyttsx3.init(driverName=None)
-        except Exception:
+            print("[TTS] 初始化新引擎")
+            engine = pyttsx3.init()
+            print(f"[TTS] 引擎初始化成功: {engine}")
+            return engine
+        except Exception as e:
+            print(f"[TTS] 引擎初始化失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _return_engine(self, engine):
@@ -118,41 +126,45 @@ class TextToSpeech:
     
     def speak(self, text, callback=None):
         """播放语音"""
+        print(f"[TTS] 播放语音: {text}")
         if not text:
+            print("[TTS] 文本为空")
             return True
         
-        with _tts_lock:
-            engine = None
-            try:
-                engine = self._get_or_create_engine()
-                
-                if not engine:
-                    return False
-                
-                with self._current_engine_lock:
-                    self._current_engine = engine
-                
-                self._apply_parameters(engine)
-                engine.say(text)
-                engine.runAndWait()
-                
-                with self._current_engine_lock:
-                    self._current_engine = None
-                
-                if callback:
-                    try:
-                        callback()
-                    except Exception:
-                        pass
-                
-                return True
-            except Exception:
-                with self._current_engine_lock:
-                    self._current_engine = None
-                return False
-            finally:
-                if engine:
-                    self._return_engine(engine)
+        try:
+            print("[TTS] 直接初始化引擎")
+            engine = pyttsx3.init()
+            print(f"[TTS] 引擎初始化成功: {engine}")
+            
+            print("[TTS] 设置属性")
+            engine.setProperty('rate', int(self.rate * self._speed))
+            engine.setProperty('volume', min(1.0, self.volume * self._volume))
+            
+            if self.voices and self._voice_id is not None and 0 <= self._voice_id < len(self.voices):
+                print(f"[TTS] 设置语音: {self._voice_id}")
+                engine.setProperty('voice', self.voices[self._voice_id].id)
+            
+            print("[TTS] 播放语音")
+            engine.say(text)
+            engine.runAndWait()
+            print("[TTS] 播放完成")
+            
+            engine.stop()
+            del engine
+            
+            if callback:
+                try:
+                    callback()
+                except Exception:
+                    pass
+            
+            print("[TTS] 返回True")
+            return True
+        except Exception as e:
+            print(f"[TTS] 异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def stop(self):
         """停止播放"""

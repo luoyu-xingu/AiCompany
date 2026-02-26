@@ -14,12 +14,13 @@ class VoiceActivityDetector:
             self.vad = webrtcvad.Vad(mode)
             self.rate = rate
             self.frame_duration = 30  # 30ms
-            self.frame_size = int(rate * self.frame_duration / 1000)
-            audio_logger.info(f"VAD初始化成功，采样率: {rate}, 帧大小: {self.frame_size}")
+            self.frame_samples = int(rate * self.frame_duration / 1000)  # 样本数
+            self.frame_bytes = self.frame_samples * 2  # 字节数（16位音频）
+            audio_logger.info(f"VAD初始化成功，采样率: {rate}, 帧样本数: {self.frame_samples}, 帧字节数: {self.frame_bytes}")
         except Exception as e:
             audio_logger.error(f"VAD初始化失败: {e}")
             self.vad = None
-    
+
     def is_voice(self, audio_frame):
         """检测音频帧是否包含语音"""
         if not self.vad:
@@ -28,8 +29,11 @@ class VoiceActivityDetector:
         
         try:
             # 确保音频帧大小正确
-            if len(audio_frame) < self.frame_size:
+            if len(audio_frame) < self.frame_bytes:
                 return False
+            
+            # 取前frame_bytes字节进行检测
+            audio_frame = audio_frame[:self.frame_bytes]
             
             # 检测语音活动
             return self.vad.is_speech(audio_frame, self.rate)
@@ -52,9 +56,9 @@ class VoiceActivityDetector:
             
             # 分割音频为帧
             frames = []
-            for i in range(0, len(audio_data), self.frame_size):
-                frame = audio_data[i:i+self.frame_size]
-                if len(frame) == self.frame_size:
+            for i in range(0, len(audio_data), self.frame_bytes):
+                frame = audio_data[i:i+self.frame_bytes]
+                if len(frame) == self.frame_bytes:
                     frames.append(frame)
             
             # 检测每个帧是否包含语音
@@ -83,9 +87,9 @@ class VoiceActivityDetector:
             
             # 分割音频为帧
             frames = []
-            for i in range(0, len(audio_data), self.frame_size):
-                frame = audio_data[i:i+self.frame_size]
-                if len(frame) == self.frame_size:
+            for i in range(0, len(audio_data), self.frame_bytes):
+                frame = audio_data[i:i+self.frame_bytes]
+                if len(frame) == self.frame_bytes:
                     frames.append(frame)
             
             # 检测语音开始
